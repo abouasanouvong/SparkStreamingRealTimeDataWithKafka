@@ -1,0 +1,5 @@
+newsapi-python==0.2.6
+confluent-kafka==2.12.2
+python-dotenv==1.0.0
+pandas
+pyarrow
