@@ -57,7 +57,12 @@ The news producer requires an API key from the [News API](https://newsapi.org).
 
 3.  Run the producer to start sending news articles to Kafka. Choose a query keyword to search for news.
     ```bash
-    python app/news_producer.py --topic topic1 --query "AI"
+    python app/news_producer.py --bootstrap-servers localhost:9092 --topic topic1 --q "AI"
+    ```
+    You can also configure the producer using environment variables such as `KAFKA_BOOTSTRAP_SERVERS`, `KAFKA_TOPIC_1`, `NEWSAPI_DEFAULT_QUERY`, `POLL_INTERVAL`, and `DEDUP_MAXSIZE`. For example, to set the default query:
+    ```bash
+    export NEWSAPI_DEFAULT_QUERY="bitcoin"
+    python app/news_producer.py
     ```
 
 ### 2. Run the Spark Streaming Job
