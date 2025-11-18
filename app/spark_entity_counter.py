@@ -2,7 +2,7 @@
 """
 PySpark Structured Streaming job:
 - Reads messages from Kafka topic `topic1` (value expected to be JSON produced by the producer script).
-- Extracts text fields and runs NER (spaCy if available, otherwise a simple regex fallback) using a Pandas UDF.
+- Extracts text fields and runs NER (Hugging Face Transformers) using a Pandas UDF.
 - Keeps a running count of named entities using Spark's stateful aggregation.
 - On every processing trigger, publishes the complete set of entity counts to Kafka topic `topic2`.
 
@@ -16,14 +16,13 @@ Usage (example):
     --trigger 30s
 
 Notes:
-- Requires pyspark and pandas. spaCy is optional for better NER.
-- For spaCy, install `spacy` and download model `python -m spacy download en_core_web_sm`.
+- Requires pyspark, pandas, torch, and transformers.
+- The default NER model is 'dslim/bert-base-NER'.
 """
 
 import os
 import argparse
 import logging
-import re
 from typing import List
 
 from pyspark.sql import SparkSession
@@ -31,58 +30,55 @@ from pyspark.sql.functions import col, from_json, concat_ws, explode, pandas_udf
 from pyspark.sql.types import StructType, StructField, StringType, ArrayType
 import pandas as pd
 
-# spaCy is optional; if not available we fall back to a simple regex-based extractor
+# Hugging Face Transformers is used for NER
 try:
-    import spacy
-    _SPACY_AVAILABLE = True
+    from transformers import pipeline
+    _TRANSFORMERS_AVAILABLE = True
 except ImportError:
-    spacy = None
-    _SPACY_AVAILABLE = False
+    pipeline = None
+    _TRANSFORMERS_AVAILABLE = False
 
 logger = logging.getLogger("spark_entity_counter")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-# Lazy-loaded spaCy model
-_nlp = None
+# Lazy-loaded Hugging Face NER pipeline
+_ner_pipeline = None
 
 
-def get_spacy_nlp():
-    """Lazily loads and returns the spaCy model."""
-    global _nlp
-    if _nlp is None:
-        if not _SPACY_AVAILABLE:
-            raise RuntimeError("spaCy is not available")
-        # Try to load the small english model; user must have downloaded it
+def get_ner_pipeline():
+    """Lazily loads and returns the Hugging Face NER pipeline."""
+    global _ner_pipeline
+    if _ner_pipeline is None:
+        if not _TRANSFORMERS_AVAILABLE:
+            raise RuntimeError("Transformers library is not available")
         try:
-            _nlp = spacy.load("en_core_web_sm")
+            # Using a popular NER model. It groups entities by default.
+            _ner_pipeline = pipeline("ner", model="dslim/bert-base-NER", grouped_entities=True, device="cpu")
         except Exception as e:
-            logger.error("Failed to load spaCy model 'en_core_web_sm': %s", e)
+            logger.error("Failed to load Hugging Face NER pipeline: %s", e)
             raise
-    return _nlp
+    return _ner_pipeline
 
-
-# Simple regex fallback for capturing sequences of capitalized words (very basic)
-_ENTITY_RE = re.compile(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b")
 
 def extract_entities_text(text: str) -> List[str]:
-    """Return list of entity strings from the provided text using spaCy if available,
-    otherwise use a simple regex-based extraction."""
+    """Return list of entity strings from the provided text using a Hugging Face NER model."""
     if not text:
         return []
     text = str(text)
-    if _SPACY_AVAILABLE:
-        try:
-            nlp = get_spacy_nlp()
-            doc = nlp(text)
-            ents = [ent.text for ent in doc.ents if ent.label_ in {"PERSON", "ORG", "GPE", "LOC", "PRODUCT", "EVENT"}]
-            return ents
-        except Exception as e:
-            logger.warning("spaCy extraction failed, falling back to regex: %s", e)
-    # fallback
-    matches = _ENTITY_RE.findall(text)
-    # filter out short / common words
-    filtered = [m for m in matches if len(m) > 2]
-    return filtered
+    try:
+        ner_pipeline = get_ner_pipeline()
+        entities = ner_pipeline(text)
+        # The pipeline with grouped_entities=True returns a list of dicts
+        # e.g., [{'entity_group': 'PER', 'score': 0.99, 'word': 'John Doe'}]
+        # We filter for common entity types.
+        filtered_ents = [
+            entity['word'] for entity in entities
+            if entity['entity_group'] in {"PER", "ORG", "LOC", "MISC"}
+        ]
+        return filtered_ents
+    except Exception as e:
+        logger.warning("Hugging Face NER extraction failed: %s", e)
+        return []
 
 
 @pandas_udf(ArrayType(StringType()))

@@ -6,7 +6,7 @@ This project demonstrates a real-time data processing pipeline using Apache Spar
 
 - **Real-time Data Ingestion**: A Python script fetches news from the [News API](https://newsapi.org) and produces it to a Kafka topic.
 - **Stream Processing**: A Spark Structured Streaming application consumes the data from Kafka.
-- **Named Entity Recognition (NER)**: Extracts entities (like people, organizations, locations) from the news text using spaCy.
+- **Named Entity Recognition (NER)**: Extracts entities (like people, organizations, locations) from the news text using Hugging Face Transformers.
 - **Stateful Aggregation**: Maintains a running count of the occurrences of each named entity.
 - **Data Output**: Publishes the aggregated counts to a separate Kafka topic.
 
@@ -37,11 +37,7 @@ This project demonstrates a real-time data processing pipeline using Apache Spar
     pip install -r requirements.txt
     ```
 
-4.  **Download the spaCy model:**
-    For Named Entity Recognition, the application uses the `en_core_web_sm` model from spaCy. Download it by running:
-    ```bash
-    python -m spacy download en_core_web_sm
-    ```
+**Note**: The first time you run the Spark job, it will download the pre-trained Hugging Face NER model (`dslim/bert-base-NER`), which may take a few moments.
 
 ## How to Run
 
@@ -74,9 +70,9 @@ Execute the following `spark-submit` command in your terminal. This command is c
 
 ```bash
 spark-submit \
-  --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.0.0 \
-  --conf "spark.driver.extraJavaOptions=--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED" \
-  --conf "spark.executor.extraJavaOptions=--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED" \
+  --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.0.1 \
+  --conf "spark.driver.extraJavaOptions=--add-opens java.base/java.nio=ALL-UNNAMED --add-opens java.base/sun.nio.ch=ALL-UNNAMED" \
+  --conf "spark.sql.execution.pyspark.udf.faulthandler.enabled=true" \
   app/spark_entity_counter.py \
   --bootstrap-servers localhost:9092 \
   --input-topic topic1 \
