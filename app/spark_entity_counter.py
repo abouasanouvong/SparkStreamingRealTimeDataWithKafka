@@ -53,7 +53,7 @@ def get_ner_pipeline():
             raise RuntimeError("Transformers library is not available")
         try:
             # Using a popular NER model. It groups entities by default.
-            _ner_pipeline = pipeline("ner", model="dslim/bert-base-NER", grouped_entities=True, device="cpu")
+            _ner_pipeline = pipeline("ner", model="dslim/bert-base-NER", grouped_entities=True, device="cpu", aggregation_strategy="simple")
         except Exception as e:
             logger.error("Failed to load Hugging Face NER pipeline: %s", e)
             raise
